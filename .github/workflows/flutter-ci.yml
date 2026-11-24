@@ -1,3 +1,4 @@
+
 name: Flutter CI
 
 on:
@@ -10,9 +11,11 @@ permissions:
   contents: read
 
 jobs:
+  # Job 1: Flutter quality checks
   flutter-checks:
     name: Flutter checks
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -35,3 +38,90 @@ jobs:
 
       - name: Run Flutter tests
         run: flutter test
+
+  # Job 2: Build Android APK and Flutter Web
+  build-release:
+    name: Build Android APK and Web
+    runs-on: ubuntu-latest
+
+    needs: flutter-checks
+
+    # Run only on push to main, not on pull requests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.6
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Extract app version
+      - name: Get app version
+        id: version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # Get commit SHA
+      - name: Get commit SHA
+        id: commit
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      # Configure Android signing
+      - name: Configure Android signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          mkdir -p android
+
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/upload-keystore.jks
+
+          cat > android/key.properties <<EOF
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+
+      # Build signed Android APK
+      - name: Build Android Release APK
+        run: flutter build apk --release
+
+      # Build Flutter Web
+      - name: Build Flutter Web
+        run: flutter build web --release
+
+      # Upload Android APK
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-v${{ steps.version.outputs.version }}-${{ steps.commit.outputs.sha }}
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      # Upload Flutter Web
+      - name: Upload Flutter Web Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-web-v${{ steps.version.outputs.version }}-${{ steps.commit.outputs.sha }}
+          path: build/web/
+          if-no-files-found: error
+
+      # Clean up signing credentials
+      - name: Clean up signing credentials
+        if: always()
+        run: |
+          rm -f android/key.properties
+          rm -f android/upload-keystore.jks
