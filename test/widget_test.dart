@@ -1,7 +1,6 @@
+import 'package:clientora_cicd/app.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:clientora_cicd/app.dart';
 
 void main() {
   testWidgets('splash routes to sign-in and sign-up validates input', (

@@ -1,4 +1,4 @@
-package com.example.clientora_cicd
+package com.clientora_cicd.ai
 
 import io.flutter.embedding.android.FlutterActivity
 
