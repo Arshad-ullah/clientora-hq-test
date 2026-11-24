@@ -1,4 +1,3 @@
-
 name: Flutter CI
 
 on:
@@ -43,7 +42,6 @@ jobs:
   build-release:
     name: Build Android APK and Web
     runs-on: ubuntu-latest
-
     needs: flutter-checks
 
     # Run only on push to main, not on pull requests
@@ -78,15 +76,33 @@ jobs:
 
       # Configure Android signing
       - name: Configure Android signing
+        shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is empty or missing"
+            exit 1
+          fi
+
           mkdir -p android
 
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/upload-keystore.jks
+          # Strip spaces/newlines/CRs, then decode
+          echo "$KEYSTORE_BASE64" | tr -d ' \n\r' | base64 -d > android/upload-keystore.jks
+
+          if [ ! -s android/upload-keystore.jks ]; then
+            echo "::error::Decoded keystore is empty"
+            exit 1
+          fi
+
+          # Verify the keystore opens with the given password and alias
+          keytool -list \
+            -keystore android/upload-keystore.jks \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" > /dev/null
 
           cat > android/key.properties <<EOF
           storePassword=$KEYSTORE_PASSWORD
